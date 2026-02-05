@@ -21,7 +21,7 @@ import {
   signOut
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
-// ====== CONFIG (as tuas chaves) ======
+// ====== CONFIG (SUBSTITUI PELAS TUAS CHAVES) ======
 const firebaseConfig = {
   apiKey: "AIzaSyCs9f8SeZQ-H2aSYm695q2RW1gGPtEUoJA",
   authDomain: "agenda-cce.firebaseapp.com",
@@ -40,7 +40,7 @@ const auth = getAuth(app);
 // =========================
 const calendario = document.getElementById("calendario");
 const selectAno = document.getElementById("ano");
-const selectMes = document.getElementById("mes"); // (pode existir, mas deixa de ser usado)
+const selectMes = document.getElementById("mes");
 
 const overlay = document.getElementById("overlay");
 const modalData = document.getElementById("modalData");
@@ -52,7 +52,7 @@ const btnAdicionarEvento = document.getElementById("btnAdicionarEvento");
 const btnGuardarDia = document.getElementById("btnGuardarDia");
 const btnApagarDia = document.getElementById("btnApagarDia");
 
-// login (se existir no teu HTML)
+// (se tens inputs de login no index)
 const inputEmail = document.getElementById("email");
 const inputPass = document.getElementById("password");
 const btnEntrar = document.getElementById("btnEntrar");
@@ -67,11 +67,10 @@ const meses = [
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
-const diasSemana = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"];
-
 function pad2(n) { return String(n).padStart(2, "0"); }
 
 function keyDia(ano, mes, dia) {
+  // mes é 0-11, dia 1-31
   return `${ano}-${pad2(mes + 1)}-${pad2(dia)}`;
 }
 
@@ -80,6 +79,7 @@ function isValidISODate(s) {
 }
 
 function parseISODate(s) {
+  // força UTC “limpo” para evitar problemas de timezone
   const [y, m, d] = s.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d));
 }
@@ -107,107 +107,38 @@ function randomId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-// Estado agregado do DIA (vermelho > laranja > nenhum)
 function estadoAgregado(eventos) {
   if (eventos.some(e => e.estado === "confirmado")) return "confirmado";
   if (eventos.some(e => e.estado === "provisorio")) return "provisorio";
   return "nenhum";
 }
 
-function tooltipClientes(eventos) {
-  const nomes = eventos.map(e => (e.clienteEmpresa || "").trim()).filter(Boolean);
-  if (!nomes.length) return "";
+// Mostrar todos os nomes de clientes no badge
+function textoBadge(eventos) {
+  const nomes = eventos
+    .map(e => (e.clienteEmpresa || "").trim())
+    .filter(Boolean);
+
+  if (nomes.length === 0) return "";
+
+  // remove duplicados mantendo ordem
   const uniq = [];
   for (const n of nomes) if (!uniq.includes(n)) uniq.push(n);
-  return uniq.join(" • ");
+
+  // se ficar muito longo, corta visualmente
+  const joined = uniq.join(" • ");
+  if (joined.length <= 28) return joined;
+  return joined.slice(0, 28) + "…";
 }
 
 // =========================
-// CSS (injetado) p/ vista anual
-// =========================
-(function injectAnnualStyles() {
-  const css = `
-  .ano-grid{
-    display:grid;
-    grid-template-columns: repeat(3, minmax(240px, 1fr));
-    gap:18px;
-    max-width: 980px;
-    margin: 0 auto;
-  }
-  @media (max-width: 900px){ .ano-grid{ grid-template-columns: repeat(2, minmax(240px, 1fr)); } }
-  @media (max-width: 600px){ .ano-grid{ grid-template-columns: 1fr; } }
-
-  .mes-card{
-    border:1px solid #e2e2e2;
-    border-radius:12px;
-    background:#fff;
-    padding:10px 10px 12px;
-  }
-  .mes-titulo{
-    font-weight:700;
-    text-align:center;
-    margin: 2px 0 8px;
-  }
-  .mini-head{
-    display:grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap:4px;
-    margin-bottom:6px;
-  }
-  .mini-head div{
-    background:#4b5f78;
-    color:#fff;
-    font-weight:700;
-    font-size:11px;
-    padding:6px 0;
-    border-radius:8px;
-    text-align:center;
-  }
-  .mini-grid{
-    display:grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap:4px;
-  }
-  .mini-day{
-    border:1px solid #cfcfcf;
-    border-radius:7px;
-    min-height:28px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size:12px;
-    font-weight:700;
-    cursor:pointer;
-    user-select:none;
-    background:#fff;
-  }
-  .mini-day.vazio{
-    border:1px dashed #d9d9d9;
-    background:transparent;
-    cursor:default;
-  }
-  .mini-day.confirmado{
-    background:#ffd6d6;
-    border-color:#ff5a5a;
-  }
-  .mini-day.provisorio{
-    background:#ffe2bf;
-    border-color:#ff9a2e;
-  }
-  `;
-  const style = document.createElement("style");
-  style.textContent = css;
-  document.head.appendChild(style);
-})();
-
-// =========================
-// AUTH + allowlist por UID
+// AUTH + allowlist (por UID)
 // =========================
 let state = {
   user: null,
   allowed: false,
   diaAtualKey: null,
-  unsubYear: null
+  unsubMonth: null
 };
 
 async function checkAllowlistByUID(uid) {
@@ -228,10 +159,14 @@ function setUIAuth() {
       : "Não autenticado";
   }
 
+  // Bloqueia UI de edição quando não autorizado
+  // (mantém visível o login)
+  const hideWhenNoAuth = document.querySelectorAll("[data-requires-auth]");
+  hideWhenNoAuth.forEach(el => el.style.display = ok ? "" : "none");
+
+  // A própria agenda pode estar atrás deste “gate”
   if (!ok) {
-    calendario.innerHTML = `<div style="text-align:center;margin-top:16px;font-weight:700;">
-      Faz login para ver e editar a agenda.
-    </div>`;
+    calendario.innerHTML = "";
   }
 }
 
@@ -239,9 +174,10 @@ onAuthStateChanged(auth, async (user) => {
   state.user = user || null;
   state.allowed = false;
 
-  if (state.unsubYear) {
-    state.unsubYear();
-    state.unsubYear = null;
+  // parar listeners antigos
+  if (state.unsubMonth) {
+    state.unsubMonth();
+    state.unsubMonth = null;
   }
 
   if (user) {
@@ -249,13 +185,13 @@ onAuthStateChanged(auth, async (user) => {
     console.log("ALLOWLIST UID:", user.uid, "exists?", state.allowed);
 
     if (state.allowed) {
-      criarCalendarioAnual();
-      startRealtimeForSelectedYear();
+      criarCalendario();
+      startRealtimeForSelectedMonth();
     } else {
-      calendario.innerHTML = `<div style="text-align:center;margin-top:16px;font-weight:700;">
-        Sem permissão (não estás na allowlist).
-      </div>`;
+      calendario.innerHTML = "";
     }
+  } else {
+    calendario.innerHTML = "";
   }
 
   setUIAuth();
@@ -278,7 +214,7 @@ btnSair?.addEventListener("click", async () => {
 });
 
 // =========================
-// Preencher anos/meses
+// Preencher selects
 // =========================
 for (let ano = 2026; ano <= 2030; ano++) {
   const option = document.createElement("option");
@@ -291,27 +227,94 @@ meses.forEach((nomeMes, index) => {
   const option = document.createElement("option");
   option.value = String(index);
   option.textContent = nomeMes;
-  selectMes?.appendChild(option);
+  selectMes.appendChild(option);
 });
 
 // =========================
-// Cache anual em tempo real
+// Firestore read helpers
 // =========================
-const yearCache = new Map(); // key: "YYYY-MM-DD" -> {eventos:[...]}
+async function lerDiaFS(key) {
+  const ref = doc(db, "dias", key);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return { eventos: [] };
+  const data = snap.data() || {};
+  return { eventos: Array.isArray(data.eventos) ? data.eventos : [] };
+}
 
-function startRealtimeForSelectedYear() {
+// =========================
+// Calendário
+// =========================
+function criarCalendario() {
   if (!canEdit()) return;
 
-  if (state.unsubYear) {
-    state.unsubYear();
-    state.unsubYear = null;
-  }
-
-  yearCache.clear();
+  calendario.innerHTML = "";
 
   const ano = Number(selectAno.value);
-  const start = `${ano}-01-01`;
-  const end = `${ano}-12-31`;
+  const mes = Number(selectMes.value);
+
+  const primeiroDiaSemana = new Date(ano, mes, 1).getDay(); // 0=Dom
+  const totalDias = new Date(ano, mes + 1, 0).getDate();
+
+  // vazios antes do dia 1
+  for (let i = 0; i < primeiroDiaSemana; i++) {
+    const vazio = document.createElement("div");
+    vazio.className = "dia vazio";
+    calendario.appendChild(vazio);
+  }
+
+  for (let dia = 1; dia <= totalDias; dia++) {
+    const div = document.createElement("div");
+    div.className = "dia";
+
+    const num = document.createElement("span");
+    num.textContent = String(dia);
+    div.appendChild(num);
+
+    // pinta / badge se existir cache do mês (via listener)
+    const k = keyDia(ano, mes, dia);
+    const cached = monthCache.get(k);
+    if (cached) {
+      const eventos = cached.eventos || [];
+      const agg = estadoAgregado(eventos);
+      if (agg === "confirmado") div.classList.add("confirmado");
+      if (agg === "provisorio") div.classList.add("provisorio");
+
+      const btxt = textoBadge(eventos);
+      if (btxt) {
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = btxt;
+        div.appendChild(badge);
+      }
+    }
+
+    div.addEventListener("click", () => abrirDia(dia, mes, ano));
+    calendario.appendChild(div);
+  }
+}
+
+// =========================
+// Realtime mês (cache)
+// =========================
+const monthCache = new Map();
+
+function startRealtimeForSelectedMonth() {
+  if (!canEdit()) return;
+
+  // limpar listener anterior
+  if (state.unsubMonth) {
+    state.unsubMonth();
+    state.unsubMonth = null;
+  }
+
+  monthCache.clear();
+
+  const ano = Number(selectAno.value);
+  const mes = Number(selectMes.value);
+
+  const start = `${ano}-${pad2(mes + 1)}-01`;
+  const lastDay = new Date(ano, mes + 1, 0).getDate();
+  const end = `${ano}-${pad2(mes + 1)}-${pad2(lastDay)}`;
 
   const diasRef = collection(db, "dias");
   const q = query(
@@ -320,87 +323,16 @@ function startRealtimeForSelectedYear() {
     where("__name__", "<=", end)
   );
 
-  state.unsubYear = onSnapshot(q, (snap) => {
+  state.unsubMonth = onSnapshot(q, (snap) => {
     snap.docChanges().forEach((ch) => {
       const id = ch.doc.id;
-      if (ch.type === "removed") yearCache.delete(id);
-      else yearCache.set(id, ch.doc.data());
+      if (ch.type === "removed") monthCache.delete(id);
+      else monthCache.set(id, ch.doc.data());
     });
-    criarCalendarioAnual();
+    criarCalendario();
   }, (err) => {
-    console.error("Listener ano erro:", err);
+    console.error("Listener mês erro:", err);
   });
-}
-
-// =========================
-// Calendário ANUAL (12 meses)
-// =========================
-function criarCalendarioAnual() {
-  if (!canEdit()) return;
-
-  const ano = Number(selectAno.value);
-  calendario.innerHTML = "";
-
-  const grid = document.createElement("div");
-  grid.className = "ano-grid";
-
-  for (let mes = 0; mes < 12; mes++) {
-    const card = document.createElement("div");
-    card.className = "mes-card";
-
-    const titulo = document.createElement("div");
-    titulo.className = "mes-titulo";
-    titulo.textContent = meses[mes];
-    card.appendChild(titulo);
-
-    const head = document.createElement("div");
-    head.className = "mini-head";
-    diasSemana.forEach(d => {
-      const h = document.createElement("div");
-      h.textContent = d;
-      head.appendChild(h);
-    });
-    card.appendChild(head);
-
-    const mini = document.createElement("div");
-    mini.className = "mini-grid";
-
-    const primeiroDiaSemana = new Date(ano, mes, 1).getDay();
-    const totalDias = new Date(ano, mes + 1, 0).getDate();
-
-    // vazios
-    for (let i = 0; i < primeiroDiaSemana; i++) {
-      const v = document.createElement("div");
-      v.className = "mini-day vazio";
-      mini.appendChild(v);
-    }
-
-    // dias
-    for (let dia = 1; dia <= totalDias; dia++) {
-      const cell = document.createElement("div");
-      cell.className = "mini-day";
-      cell.textContent = String(dia);
-
-      const k = keyDia(ano, mes, dia);
-      const cached = yearCache.get(k);
-      const eventos = cached?.eventos || [];
-
-      const agg = estadoAgregado(eventos);
-      if (agg === "confirmado") cell.classList.add("confirmado");
-      if (agg === "provisorio") cell.classList.add("provisorio");
-
-      const tip = tooltipClientes(eventos);
-      if (tip) cell.title = tip;
-
-      cell.addEventListener("click", () => abrirDia(dia, mes, ano));
-      mini.appendChild(cell);
-    }
-
-    card.appendChild(mini);
-    grid.appendChild(card);
-  }
-
-  calendario.appendChild(grid);
 }
 
 // =========================
@@ -417,7 +349,10 @@ function criarCardEvento(evento = {}, indice = 1, defaultDiaISO = null) {
   const card = document.createElement("div");
   card.className = "evento-card";
 
+  // garantir eventId fixo (para replicar em vários dias sem duplicar)
   if (!evento.eventId) evento.eventId = randomId();
+
+  // defaults para intervalo
   if (!evento.dataInicio && defaultDiaISO) evento.dataInicio = defaultDiaISO;
   if (!evento.dataFim && defaultDiaISO) evento.dataFim = defaultDiaISO;
 
@@ -474,6 +409,7 @@ function criarCardEvento(evento = {}, indice = 1, defaultDiaISO = null) {
     </div>
   `;
 
+  // preencher valores
   for (const [k, v] of Object.entries(evento)) {
     const el = card.querySelector(`[name="${k}"]`);
     if (el) el.value = v ?? "";
@@ -482,6 +418,7 @@ function criarCardEvento(evento = {}, indice = 1, defaultDiaISO = null) {
   card.querySelector(".btnRemover").addEventListener("click", () => {
     card.remove();
     renumerarEventos();
+    aplicarCoresSequenciais();
   });
 
   return card;
@@ -494,12 +431,12 @@ function renumerarEventos() {
   });
 }
 
-async function lerDiaFS(key) {
-  const ref = doc(db, "dias", key);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return { eventos: [] };
-  const data = snap.data() || {};
-  return { eventos: Array.isArray(data.eventos) ? data.eventos : [] };
+function aplicarCoresSequenciais() {
+  const cards = [...listaEventos.querySelectorAll(".evento-card")];
+  cards.forEach((card, idx) => {
+    card.classList.remove("alt1", "alt2", "alt3", "alt4");
+    card.classList.add(`alt${(idx % 4) + 1}`); // 4 cores (definir no CSS)
+  });
 }
 
 async function abrirDia(dia, mes, ano) {
@@ -522,18 +459,25 @@ async function abrirDia(dia, mes, ano) {
     });
   }
 
+  aplicarCoresSequenciais();
   abrirModal();
 }
 
+// =========================
 // + Adicionar evento
+// =========================
 btnAdicionarEvento.addEventListener("click", () => {
   if (!canEdit() || !state.diaAtualKey) return;
+
   const count = listaEventos.querySelectorAll(".evento-card").length;
   listaEventos.appendChild(criarCardEvento({ estado: "nenhum" }, count + 1, state.diaAtualKey));
   renumerarEventos();
+  aplicarCoresSequenciais();
 });
 
+// =========================
 // Guardar (intervalos)
+// =========================
 async function upsertEventoNoDia(diaISO, eventoObj) {
   const ref = doc(db, "dias", diaISO);
 
@@ -542,10 +486,29 @@ async function upsertEventoNoDia(diaISO, eventoObj) {
     const data = snap.exists() ? (snap.data() || {}) : {};
     const eventos = Array.isArray(data.eventos) ? data.eventos : [];
 
+    // remove evento com o mesmo eventId (para "atualizar" sem duplicar)
     const sem = eventos.filter(e => e.eventId !== eventoObj.eventId);
+
+    // adiciona o evento
     sem.push(eventoObj);
 
     tx.set(ref, { eventos: sem }, { merge: true });
+  });
+}
+
+async function removerEventoDoDia(diaISO, eventId) {
+  const ref = doc(db, "dias", diaISO);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return;
+
+    const data = snap.data() || {};
+    const eventos = Array.isArray(data.eventos) ? data.eventos : [];
+    const novos = eventos.filter(e => e.eventId !== eventId);
+
+    if (novos.length === 0) tx.delete(ref);
+    else tx.set(ref, { eventos: novos }, { merge: true });
   });
 }
 
@@ -554,6 +517,7 @@ btnGuardarDia.addEventListener("click", async () => {
 
   const cards = [...listaEventos.querySelectorAll(".evento-card")];
 
+  // ler eventos do formulário
   const eventos = cards.map(card => {
     const obj = {};
     card.querySelectorAll("[name]").forEach(el => obj[el.name] = el.value);
@@ -564,62 +528,87 @@ btnGuardarDia.addEventListener("click", async () => {
   );
 
   try {
+    // Caso: sem eventos => apagar só o dia atual
     if (eventos.length === 0) {
       await deleteDoc(doc(db, "dias", state.diaAtualKey));
       fecharModal();
-      criarCalendarioAnual();
+      criarCalendario();
       return;
     }
 
+    // Para cada evento, grava no intervalo dataInicio..dataFim
     for (const ev of eventos) {
+      // normalizar datas
       let di = ev.dataInicio;
       let df = ev.dataFim;
 
+      // fallback: se estiverem vazias, usa o dia atual
       if (!isValidISODate(di)) di = state.diaAtualKey;
       if (!isValidISODate(df)) df = di;
 
+      // garantir ordem
       if (parseISODate(df) < parseISODate(di)) {
         const tmp = di; di = df; df = tmp;
       }
 
       const dias = listDatesInclusiveISO(di, df);
+
+      // grava em todos os dias do intervalo
       for (const d of dias) {
         await upsertEventoNoDia(d, { ...ev, dataInicio: di, dataFim: df });
       }
+
+      // NOTA: não removo automaticamente dos dias antigos fora do intervalo
+      // (se quiseres “mover”, diz-me e eu adiciono essa lógica)
     }
 
     fecharModal();
-    criarCalendarioAnual();
+    criarCalendario();
   } catch (e) {
     console.error("ERRO AO GUARDAR:", e);
     alert("Erro ao guardar. Vê F12 → Console.");
   }
 });
 
+// =========================
 // Apagar todos do dia
+// =========================
 btnApagarDia.addEventListener("click", async () => {
   if (!canEdit() || !state.diaAtualKey) return;
   await deleteDoc(doc(db, "dias", state.diaAtualKey));
   fecharModal();
-  criarCalendarioAnual();
+  criarCalendario();
 });
 
+// =========================
 // Fechar modal
+// =========================
 btnFechar.addEventListener("click", fecharModal);
 btnCancelar.addEventListener("click", fecharModal);
-overlay.addEventListener("click", (e) => { if (e.target === overlay) fecharModal(); });
 
-// Ano muda => refaz listener do ano
-selectAno.addEventListener("change", () => {
-  if (!canEdit()) return;
-  criarCalendarioAnual();
-  startRealtimeForSelectedYear();
+overlay.addEventListener("click", (e) => {
+  if (e.target === overlay) fecharModal();
 });
 
-// (mes deixa de ser usado na vista anual, mas não faz mal existir)
-selectMes?.addEventListener("change", () => {});
+// =========================
+// Atualizar mês/ano
+// =========================
+selectAno.addEventListener("change", () => {
+  if (!canEdit()) return;
+  criarCalendario();
+  startRealtimeForSelectedMonth();
+});
 
+selectMes.addEventListener("change", () => {
+  if (!canEdit()) return;
+  criarCalendario();
+  startRealtimeForSelectedMonth();
+});
+
+// =========================
 // Iniciar
+// =========================
 selectAno.value = "2026";
-if (selectMes) selectMes.value = "0";
+selectMes.value = "0";
 setUIAuth();
+
