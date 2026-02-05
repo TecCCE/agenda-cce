@@ -62,7 +62,7 @@ const meses = [
 ];
 
 function pad2(n) { return String(n).padStart(2, "0"); }
-function normalizeEmail(s) { return String(s || "").trim().toLowerCase(); }
+function normalizeEmail(s) { return String(s || "").trim(); }
 
 function keyDia(ano, mes, dia) {
   return `${ano}-${pad2(mes + 1)}-${pad2(dia)}`;
@@ -490,3 +490,4 @@ selectAno.value = "2026";
 selectMes.value = "0";
 setUIEnabled(false);
 renderMensagem("Faz login para ver e editar a agenda.");
+
