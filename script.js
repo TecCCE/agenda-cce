@@ -221,8 +221,8 @@ function startRealtimeForSelectedMonth() {
   const diasRef = collection(db, "dias");
   const q = query(
     diasRef,
-    where(FieldPath.documentId(), ">=", start),
-    where(FieldPath.documentId(), "<=", end)
+    where("__name__", ">=", start),
+    where("__name__", "<=", end)
   );
 
   state.unsubMonth = onSnapshot(q, (snap) => {
@@ -529,3 +529,4 @@ selectMes.addEventListener("change", () => canEdit() && startRealtimeForSelected
 /* ===== UI inicial ===== */
 setUIEnabled(false);
 renderMensagem("Faz login para ver e editar a agenda.");
+
