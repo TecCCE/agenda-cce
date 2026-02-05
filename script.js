@@ -1,3 +1,10 @@
+/* =========================
+   AGENDA CCE - script.js
+   Firebase Auth (email/pass) + Firestore realtime
+   Allowlist por UID (mais seguro)
+========================= */
+
+/* ===== Imports Firebase (SDK via CDN) ===== */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 
 import {
@@ -20,7 +27,7 @@ import {
   FieldPath
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
-/* ========= Firebase Config ========= */
+/* ===== Config Firebase (a tua) ===== */
 const firebaseConfig = {
   apiKey: "AIzaSyCs9f8SeZQ-H2aSYm695q2RW1gGPtEUoJA",
   authDomain: "agenda-cce.firebaseapp.com",
@@ -34,7 +41,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-/* ========= DOM ========= */
+/* ===== DOM ===== */
 const calendario = document.getElementById("calendario");
 const selectAno = document.getElementById("ano");
 const selectMes = document.getElementById("mes");
@@ -55,14 +62,14 @@ const btnLogin = document.getElementById("btnLogin");
 const btnLogout = document.getElementById("btnLogout");
 const authStatus = document.getElementById("authStatus");
 
-/* ========= Utils ========= */
+/* ===== Constantes ===== */
 const meses = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
+/* ===== Helpers ===== */
 function pad2(n) { return String(n).padStart(2, "0"); }
-function normalizeEmail(s) { return String(s || "").trim(); }
 
 function keyDia(ano, mes, dia) {
   return `${ano}-${pad2(mes + 1)}-${pad2(dia)}`;
@@ -75,37 +82,17 @@ function startEndKeys(ano, mes) {
   return { start, end };
 }
 
-function estadoAgregado(eventos) {
-  if (eventos.some(e => e.estado === "confirmado")) return "confirmado";
-  if (eventos.some(e => e.estado === "provisorio")) return "provisorio";
-  if (eventos.some(e => e.estado === "segunda_opcao")) return "segunda_opcao";
-  return "nenhum";
+function safeArray(v) { return Array.isArray(v) ? v : []; }
+
+function canEdit() {
+  return !!state.user && state.allowed === true;
 }
 
-function textoBadge(eventos) {
-  const nomes = eventos.map(e => (e.evento || "").trim()).filter(Boolean);
-  if (nomes.length === 0) return "";
-  return nomes.join(", ");
-}
-
-/* ========= Estado ========= */
-let user = null;
-let allowed = false;
-
-let monthData = new Map();
-let unsubMonth = null;
-
-let diaAtualKey = null;
-let unsubDay = null;
-
-/* ========= Helpers UI bloqueio ========= */
 function setUIEnabled(enabled) {
-  // bloquear botões do modal
   btnAdicionarEvento.disabled = !enabled;
   btnGuardarDia.disabled = !enabled;
   btnApagarDia.disabled = !enabled;
 
-  // opcional: dar feedback visual (se tiveres CSS)
   btnAdicionarEvento.style.opacity = enabled ? "1" : "0.5";
   btnGuardarDia.style.opacity = enabled ? "1" : "0.5";
   btnApagarDia.style.opacity = enabled ? "1" : "0.5";
@@ -116,20 +103,43 @@ function renderMensagem(texto) {
   const msg = document.createElement("div");
   msg.style.gridColumn = "1 / -1";
   msg.style.padding = "12px";
-  msg.style.color = "#333";
   msg.style.fontWeight = "700";
+  msg.style.color = "#333";
   msg.textContent = texto;
   calendario.appendChild(msg);
 }
 
-function canEdit() {
-  return !!user && allowed;
+/* ===== Estado global ===== */
+const state = {
+  user: null,
+  allowed: false,
+
+  // realtime mês
+  unsubMonth: null,
+  monthData: new Map(), // key: YYYY-MM-DD -> {eventos:[]}
+
+  // modal/dia aberto
+  diaAtualKey: null,
+  unsubDay: null
+};
+
+/* ===== Allowlist por UID ===== */
+async function checkAllowlist(uid) {
+  try {
+    const ref = doc(db, "allowlist", uid);
+    const snap = await getDoc(ref);
+    console.log("ALLOWLIST UID:", uid, "exists?", snap.exists());
+    return snap.exists();
+  } catch (e) {
+    console.error("ALLOWLIST ERROR:", e);
+    return false;
+  }
 }
 
-/* ========= AUTH ========= */
-btnLogin.addEventListener("click", async () => {
-  const email = normalizeEmail(emailInput.value);
-  const password = passInput.value;
+/* ===== AUTH handlers ===== */
+btnLogin?.addEventListener("click", async () => {
+  const email = String(emailInput.value || "").trim();
+  const password = String(passInput.value || "");
 
   if (!email || !password) {
     alert("Introduz email e palavra-passe.");
@@ -145,16 +155,20 @@ btnLogin.addEventListener("click", async () => {
   }
 });
 
-btnLogout.addEventListener("click", async () => {
+btnLogout?.addEventListener("click", async () => {
   await signOut(auth);
 });
 
-onAuthStateChanged(auth, async (user) => {
-  if (user) {
-    allowed = await checkAllowlistByUid(user.uid);
+onAuthStateChanged(auth, async (u) => {
+  state.user = u || null;
+
+  // logout
+  if (!state.user) {
+    state.allowed = false;
+
     authStatus.textContent = "Não autenticado";
-    btnLogout.classList.add("hidden");
-    btnLogin.classList.remove("hidden");
+    btnLogin?.classList.remove("hidden");
+    btnLogout?.classList.add("hidden");
 
     stopRealtime();
     fecharModal();
@@ -163,18 +177,23 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
 
-  authStatus.textContent = `Autenticado: ${user.email}`;
-  btnLogout.classList.remove("hidden");
-  btnLogin.classList.add("hidden");
+  // login ok
+  authStatus.textContent = `Autenticado: ${state.user.email}`;
+  btnLogin?.classList.add("hidden");
+  btnLogout?.classList.remove("hidden");
 
-  allowed = await checkAllowlist(user.email);
+  // ✅ check allowlist por UID
+  state.allowed = await checkAllowlist(state.user.uid);
 
-  if (!allowed) {
+  if (!state.allowed) {
     stopRealtime();
     fecharModal();
     setUIEnabled(false);
-    renderMensagem("Sem permissão. O teu email não está autorizado.");
-    alert("Sem permissão: o teu email não está na allowlist.");
+    renderMensagem("Sem permissão. Conta não autorizada.");
+    alert(
+      "Sem permissão: este utilizador não está na allowlist.\n" +
+      "Adiciona um documento em Firestore > allowlist com Document ID = UID do utilizador."
+    );
     return;
   }
 
@@ -182,29 +201,18 @@ onAuthStateChanged(auth, async (user) => {
   startRealtimeForSelectedMonth();
 });
 
-async function checkAllowlistByUid(uid) {
-  try {
-    const ref = doc(db, "allowlist", uid);
-    const snap = await getDoc(ref);
-    return snap.exists();
-  } catch (e) {
-    console.error("ALLOWLIST ERROR:", e);
-    return false;
-  }
-}
-
-/* ========= REALTIME ========= */
+/* ===== Realtime start/stop ===== */
 function stopRealtime() {
-  if (unsubMonth) { unsubMonth(); unsubMonth = null; }
-  if (unsubDay) { unsubDay(); unsubDay = null; }
-  monthData = new Map();
+  if (state.unsubMonth) { state.unsubMonth(); state.unsubMonth = null; }
+  if (state.unsubDay) { state.unsubDay(); state.unsubDay = null; }
+  state.monthData = new Map();
 }
 
 function startRealtimeForSelectedMonth() {
   if (!canEdit()) return;
 
-  if (unsubMonth) { unsubMonth(); unsubMonth = null; }
-  monthData = new Map();
+  if (state.unsubMonth) { state.unsubMonth(); state.unsubMonth = null; }
+  state.monthData = new Map();
 
   const ano = Number(selectAno.value);
   const mes = Number(selectMes.value);
@@ -217,24 +225,25 @@ function startRealtimeForSelectedMonth() {
     where(FieldPath.documentId(), "<=", end)
   );
 
-  unsubMonth = onSnapshot(q, (snap) => {
-    const newMap = new Map();
-    snap.forEach(d => newMap.set(d.id, d.data()));
-    monthData = newMap;
+  state.unsubMonth = onSnapshot(q, (snap) => {
+    const map = new Map();
+    snap.forEach(d => map.set(d.id, d.data()));
+    state.monthData = map;
     criarCalendario();
   }, (err) => {
-    console.error(err);
-    alert("Erro a ouvir alterações do mês (Firestore).");
+    console.error("MONTH SNAPSHOT ERROR:", err);
+    renderMensagem("Erro ao carregar dados do Firestore (permissões ou rede).");
   });
 }
 
-/* ========= Preencher selects ========= */
+/* ===== Preencher selects ===== */
 for (let ano = 2026; ano <= 2030; ano++) {
   const opt = document.createElement("option");
   opt.value = String(ano);
   opt.textContent = String(ano);
   selectAno.appendChild(opt);
 }
+
 meses.forEach((m, idx) => {
   const opt = document.createElement("option");
   opt.value = String(idx);
@@ -242,12 +251,39 @@ meses.forEach((m, idx) => {
   selectMes.appendChild(opt);
 });
 
-/* ========= CALENDÁRIO ========= */
+selectAno.value = "2026";
+selectMes.value = "0";
+
+/* ===== Estado agregado (cores do dia) ===== */
+function estadoAgregado(eventos) {
+  if (eventos.some(e => e.estado === "confirmado")) return "confirmado";
+  if (eventos.some(e => e.estado === "provisorio")) return "provisorio";
+  // "segunda_opcao" não pinta o dia (podes alterar se quiseres)
+  return "nenhum";
+}
+
+/* ===== Badge: mostrar todos os nomes ===== */
+function textoBadge(eventos) {
+  // Mostra o campo "evento"; se estiver vazio usa "clienteEmpresa"
+  const nomes = eventos
+    .map(e => (String(e.evento || "").trim()) || (String(e.clienteEmpresa || "").trim()))
+    .filter(Boolean);
+
+  if (nomes.length === 0) return "";
+
+  // para não ficar gigante, corta nomes muito longos
+  const clean = nomes.map(n => n.length > 18 ? (n.slice(0, 18) + "…") : n);
+
+  // se houver muitos, ainda assim mostramos todos, em várias linhas
+  return clean.join(" · ");
+}
+
+/* ===== Criar calendário ===== */
 function criarCalendario() {
   calendario.innerHTML = "";
 
   if (!canEdit()) {
-    renderMensagem(user ? "Sem permissão." : "Faz login para ver e editar a agenda.");
+    renderMensagem("Faz login para ver e editar a agenda.");
     return;
   }
 
@@ -272,8 +308,8 @@ function criarCalendario() {
     div.appendChild(num);
 
     const k = keyDia(ano, mes, dia);
-    const dados = monthData.get(k) || { eventos: [] };
-    const eventos = Array.isArray(dados.eventos) ? dados.eventos : [];
+    const dados = state.monthData.get(k) || { eventos: [] };
+    const eventos = safeArray(dados.eventos);
 
     const agg = estadoAgregado(eventos);
     if (agg === "confirmado") div.classList.add("confirmado");
@@ -287,24 +323,25 @@ function criarCalendario() {
       div.appendChild(badge);
     }
 
-    // ✅ Agora só abre dia se autenticado+allowed (aqui já é)
     div.addEventListener("click", () => abrirDia(dia, mes, ano));
     calendario.appendChild(div);
   }
 }
 
-selectAno.addEventListener("change", () => canEdit() && startRealtimeForSelectedMonth());
-selectMes.addEventListener("change", () => canEdit() && startRealtimeForSelectedMonth());
-
-/* ========= MODAL ========= */
+/* ===== Modal open/close ===== */
 function abrirModal() { overlay.classList.remove("hidden"); }
 function fecharModal() {
   overlay.classList.add("hidden");
-  diaAtualKey = null;
+  state.diaAtualKey = null;
   listaEventos.innerHTML = "";
-  if (unsubDay) { unsubDay(); unsubDay = null; }
+  if (state.unsubDay) { state.unsubDay(); state.unsubDay = null; }
 }
 
+btnFechar?.addEventListener("click", fecharModal);
+btnCancelar?.addEventListener("click", fecharModal);
+overlay?.addEventListener("click", (e) => { if (e.target === overlay) fecharModal(); });
+
+/* ===== Cards de evento ===== */
 function criarCardEvento(evento = {}, indice = 1) {
   const card = document.createElement("div");
   card.className = "evento-card";
@@ -358,22 +395,18 @@ function criarCardEvento(evento = {}, indice = 1) {
     </div>
   `;
 
+  // preencher valores existentes
   for (const [k, v] of Object.entries(evento)) {
     const el = card.querySelector(`[name="${k}"]`);
     if (el) el.value = v ?? "";
   }
 
-  const btnRem = card.querySelector(".btnRemover");
-  btnRem.addEventListener("click", () => {
+  // remover
+  card.querySelector(".btnRemover").addEventListener("click", () => {
     if (!canEdit()) return;
     card.remove();
     renumerarEventos();
   });
-
-  // ✅ Se não pode editar, desativa inputs
-  if (!canEdit()) {
-    card.querySelectorAll("input, select, textarea, button").forEach(el => el.disabled = true);
-  }
 
   return card;
 }
@@ -397,45 +430,56 @@ function renderEventosNoModal(eventos, diaKey) {
       listaEventos.appendChild(criarCardEvento(copy, idx + 1));
     });
   }
+
   renumerarEventos();
 }
 
+/* ===== Abrir um dia (realtime doc) ===== */
 function abrirDia(dia, mes, ano) {
   if (!canEdit()) {
     alert("Tens de fazer login para editar.");
     return;
   }
 
-  diaAtualKey = keyDia(ano, mes, dia);
-  modalData.textContent = `Dia ${dia} de ${meses[mes]} de ${ano} (${diaAtualKey})`;
+  state.diaAtualKey = keyDia(ano, mes, dia);
+  modalData.textContent = `Dia ${dia} de ${meses[mes]} de ${ano} (${state.diaAtualKey})`;
 
-  if (unsubDay) { unsubDay(); unsubDay = null; }
+  // parar listener anterior
+  if (state.unsubDay) { state.unsubDay(); state.unsubDay = null; }
 
-  const ref = doc(db, "dias", diaAtualKey);
-  unsubDay = onSnapshot(ref, (snap) => {
+  const ref = doc(db, "dias", state.diaAtualKey);
+
+  state.unsubDay = onSnapshot(ref, (snap) => {
     const dados = snap.exists() ? snap.data() : { eventos: [] };
-    const eventos = Array.isArray(dados.eventos) ? dados.eventos : [];
-    monthData.set(diaAtualKey, { eventos });
-    renderEventosNoModal(eventos, diaAtualKey);
+    const eventos = safeArray(dados.eventos);
+
+    // atualizar cache mensal
+    state.monthData.set(state.diaAtualKey, { eventos });
+
+    // render modal + calendário
+    renderEventosNoModal(eventos, state.diaAtualKey);
     criarCalendario();
+  }, (err) => {
+    console.error("DAY SNAPSHOT ERROR:", err);
+    alert("Sem permissões para abrir este dia (Firestore).");
   });
 
   abrirModal();
 }
 
-/* + Adicionar evento */
-btnAdicionarEvento.addEventListener("click", () => {
+/* ===== Botões do modal ===== */
+btnAdicionarEvento?.addEventListener("click", () => {
   if (!canEdit()) return;
   const count = listaEventos.querySelectorAll(".evento-card").length;
-  listaEventos.appendChild(criarCardEvento({ estado: "nenhum", dataEvento: diaAtualKey }, count + 1));
+  listaEventos.appendChild(criarCardEvento({ estado: "nenhum", dataEvento: state.diaAtualKey }, count + 1));
   renumerarEventos();
 });
 
-/* Guardar */
-btnGuardarDia.addEventListener("click", async () => {
-  if (!canEdit() || !diaAtualKey) return;
+btnGuardarDia?.addEventListener("click", async () => {
+  if (!canEdit() || !state.diaAtualKey) return;
 
   const cards = [...listaEventos.querySelectorAll(".evento-card")];
+
   const eventos = cards
     .map(card => {
       const obj = {};
@@ -449,12 +493,13 @@ btnGuardarDia.addEventListener("click", async () => {
 
   try {
     if (eventos.length === 0) {
-      await deleteDoc(doc(db, "dias", diaAtualKey));
-      monthData.delete(diaAtualKey);
+      await deleteDoc(doc(db, "dias", state.diaAtualKey));
+      state.monthData.delete(state.diaAtualKey);
     } else {
-      await setDoc(doc(db, "dias", diaAtualKey), { eventos }, { merge: true });
-      monthData.set(diaAtualKey, { eventos });
+      await setDoc(doc(db, "dias", state.diaAtualKey), { eventos }, { merge: true });
+      state.monthData.set(state.diaAtualKey, { eventos });
     }
+
     fecharModal();
     criarCalendario();
   } catch (e) {
@@ -463,13 +508,12 @@ btnGuardarDia.addEventListener("click", async () => {
   }
 });
 
-/* Apagar dia */
-btnApagarDia.addEventListener("click", async () => {
-  if (!canEdit() || !diaAtualKey) return;
+btnApagarDia?.addEventListener("click", async () => {
+  if (!canEdit() || !state.diaAtualKey) return;
 
   try {
-    await deleteDoc(doc(db, "dias", diaAtualKey));
-    monthData.delete(diaAtualKey);
+    await deleteDoc(doc(db, "dias", state.diaAtualKey));
+    state.monthData.delete(state.diaAtualKey);
     fecharModal();
     criarCalendario();
   } catch (e) {
@@ -478,16 +522,10 @@ btnApagarDia.addEventListener("click", async () => {
   }
 });
 
-/* Fechar */
-btnFechar.addEventListener("click", fecharModal);
-btnCancelar.addEventListener("click", fecharModal);
-overlay.addEventListener("click", (e) => { if (e.target === overlay) fecharModal(); });
+/* ===== Atualizar mês/ano ===== */
+selectAno.addEventListener("change", () => canEdit() && startRealtimeForSelectedMonth());
+selectMes.addEventListener("change", () => canEdit() && startRealtimeForSelectedMonth());
 
-/* Iniciar */
-selectAno.value = "2026";
-selectMes.value = "0";
+/* ===== UI inicial ===== */
 setUIEnabled(false);
 renderMensagem("Faz login para ver e editar a agenda.");
-
-
-
