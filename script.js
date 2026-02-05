@@ -1,3 +1,40 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  onSnapshot,
+  FieldPath
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+/* ========= Firebase Config (o teu) ========= */
+const firebaseConfig = {
+  apiKey: "AIzaSyCs9f8SeZQ-H2aSYm695q2RW1gGPtEUoJA",
+  authDomain: "agenda-cce.firebaseapp.com",
+  projectId: "agenda-cce",
+  storageBucket: "agenda-cce.firebasestorage.app",
+  messagingSenderId: "405095335038",
+  appId: "1:405095335038:web:cb064572b272f95850c42f"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+/* ========= DOM ========= */
 const calendario = document.getElementById("calendario");
 const selectAno = document.getElementById("ano");
 const selectMes = document.getElementById("mes");
@@ -12,70 +49,193 @@ const btnAdicionarEvento = document.getElementById("btnAdicionarEvento");
 const btnGuardarDia = document.getElementById("btnGuardarDia");
 const btnApagarDia = document.getElementById("btnApagarDia");
 
+const emailInput = document.getElementById("email");
+const passInput = document.getElementById("password");
+const btnLogin = document.getElementById("btnLogin");
+const btnLogout = document.getElementById("btnLogout");
+const authStatus = document.getElementById("authStatus");
+
+/* ========= Utils ========= */
 const meses = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
 function pad2(n) { return String(n).padStart(2, "0"); }
+function normalizeEmail(s) { return String(s || "").trim().toLowerCase(); }
 
 function keyDia(ano, mes, dia) {
   return `${ano}-${pad2(mes + 1)}-${pad2(dia)}`;
 }
 
-function lerDia(key) {
-  try {
-    const raw = localStorage.getItem("agenda:" + key);
-    return raw ? JSON.parse(raw) : { eventos: [] };
-  } catch {
-    return { eventos: [] };
-  }
-}
-
-function gravarDia(key, obj) {
-  localStorage.setItem("agenda:" + key, JSON.stringify(obj));
-}
-
-function apagarDia(key) {
-  localStorage.removeItem("agenda:" + key);
+function startEndKeys(ano, mes) {
+  const start = `${ano}-${pad2(mes + 1)}-01`;
+  const last = new Date(ano, mes + 1, 0).getDate();
+  const end = `${ano}-${pad2(mes + 1)}-${pad2(last)}`;
+  return { start, end };
 }
 
 function estadoAgregado(eventos) {
+  // prioridade: confirmado > provisorio > segunda_opcao > nenhum
   if (eventos.some(e => e.estado === "confirmado")) return "confirmado";
   if (eventos.some(e => e.estado === "provisorio")) return "provisorio";
+  if (eventos.some(e => e.estado === "segunda_opcao")) return "segunda_opcao";
   return "nenhum";
 }
 
-/* 🔹 NOVA VERSÃO — MOSTRA TODOS OS NOMES */
+// Mostra TODOS os nomes dos eventos no badge
 function textoBadge(eventos) {
   const nomes = eventos
     .map(e => (e.evento || "").trim())
     .filter(Boolean);
-
   if (nomes.length === 0) return "";
-
   return nomes.join(", ");
 }
 
-/* Preencher anos */
-for (let ano = 2026; ano <= 2030; ano++) {
-  const option = document.createElement("option");
-  option.value = String(ano);
-  option.textContent = String(ano);
-  selectAno.appendChild(option);
-}
+/* ========= Estado global ========= */
+let user = null;
+let allowed = false;
 
-/* Preencher meses */
-meses.forEach((nomeMes, index) => {
-  const option = document.createElement("option");
-  option.value = String(index);
-  option.textContent = nomeMes;
-  selectMes.appendChild(option);
+let monthData = new Map();     // docId -> { eventos: [] }
+let unsubMonth = null;
+
+let diaAtualKey = null;
+let unsubDay = null;
+
+/* ========= AUTH ========= */
+btnLogin.addEventListener("click", async () => {
+  const email = normalizeEmail(emailInput.value);
+  const password = passInput.value;
+
+  if (!email || !password) {
+    alert("Introduz email e palavra-passe.");
+    return;
+  }
+
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+    passInput.value = "";
+  } catch (e) {
+    console.error(e);
+    alert("Falha no login. Verifica email/palavra-passe.");
+  }
 });
 
-/* Criar calendário */
+btnLogout.addEventListener("click", async () => {
+  await signOut(auth);
+});
+
+onAuthStateChanged(auth, async (u) => {
+  user = u || null;
+
+  if (!user) {
+    allowed = false;
+    authStatus.textContent = "Não autenticado";
+    btnLogout.classList.add("hidden");
+    btnLogin.classList.remove("hidden");
+    stopRealtime();
+    renderMensagem("Faz login para ver a agenda.");
+    return;
+  }
+
+  authStatus.textContent = `Autenticado: ${user.email}`;
+  btnLogout.classList.remove("hidden");
+  btnLogin.classList.add("hidden");
+
+  allowed = await checkAllowlist(user.email);
+
+  if (!allowed) {
+    stopRealtime();
+    renderMensagem("Sem permissão. O teu email não está autorizado.");
+    alert("Sem permissão: o teu email não está na allowlist.");
+    return;
+  }
+
+  startRealtimeForSelectedMonth();
+});
+
+/* allowlist: documento allowlist/{email} */
+async function checkAllowlist(email) {
+  try {
+    const ref = doc(db, "allowlist", normalizeEmail(email));
+    const snap = await getDoc(ref);
+    return snap.exists();
+  } catch (e) {
+    console.error(e);
+    return false;
+  }
+}
+
+/* ========= REALTIME ========= */
+function stopRealtime() {
+  if (unsubMonth) { unsubMonth(); unsubMonth = null; }
+  if (unsubDay) { unsubDay(); unsubDay = null; }
+  monthData = new Map();
+}
+
+function startRealtimeForSelectedMonth() {
+  if (!allowed) return;
+
+  if (unsubMonth) { unsubMonth(); unsubMonth = null; }
+  monthData = new Map();
+
+  const ano = Number(selectAno.value);
+  const mes = Number(selectMes.value);
+  const { start, end } = startEndKeys(ano, mes);
+
+  const diasRef = collection(db, "dias");
+  const q = query(
+    diasRef,
+    where(FieldPath.documentId(), ">=", start),
+    where(FieldPath.documentId(), "<=", end)
+  );
+
+  unsubMonth = onSnapshot(q, (snap) => {
+    const newMap = new Map();
+    snap.forEach(d => newMap.set(d.id, d.data()));
+    monthData = newMap;
+    criarCalendario();
+  }, (err) => {
+    console.error(err);
+    alert("Erro a ouvir alterações do mês (Firestore).");
+  });
+}
+
+/* ========= UI: Mensagem ========= */
+function renderMensagem(texto) {
+  calendario.innerHTML = "";
+  const msg = document.createElement("div");
+  msg.style.gridColumn = "1 / -1";
+  msg.style.padding = "12px";
+  msg.style.color = "#333";
+  msg.style.fontWeight = "700";
+  msg.textContent = texto;
+  calendario.appendChild(msg);
+}
+
+/* ========= Preencher selects ========= */
+for (let ano = 2026; ano <= 2030; ano++) {
+  const opt = document.createElement("option");
+  opt.value = String(ano);
+  opt.textContent = String(ano);
+  selectAno.appendChild(opt);
+}
+
+meses.forEach((m, idx) => {
+  const opt = document.createElement("option");
+  opt.value = String(idx);
+  opt.textContent = m;
+  selectMes.appendChild(opt);
+});
+
+/* ========= Calendário ========= */
 function criarCalendario() {
   calendario.innerHTML = "";
+
+  if (!allowed) {
+    renderMensagem(user ? "Sem permissão." : "Faz login para ver a agenda.");
+    return;
+  }
 
   const ano = Number(selectAno.value);
   const mes = Number(selectMes.value);
@@ -98,12 +258,13 @@ function criarCalendario() {
     div.appendChild(num);
 
     const k = keyDia(ano, mes, dia);
-    const dados = lerDia(k);
+    const dados = monthData.get(k) || { eventos: [] };
     const eventos = Array.isArray(dados.eventos) ? dados.eventos : [];
 
     const agg = estadoAgregado(eventos);
     if (agg === "confirmado") div.classList.add("confirmado");
     if (agg === "provisorio") div.classList.add("provisorio");
+    // se quiseres uma cor para 2ª opção, depois adicionamos a classe no CSS
 
     const btxt = textoBadge(eventos);
     if (btxt) {
@@ -118,15 +279,16 @@ function criarCalendario() {
   }
 }
 
-/* Modal */
-let diaAtualKey = null;
+selectAno.addEventListener("change", () => allowed && startRealtimeForSelectedMonth());
+selectMes.addEventListener("change", () => allowed && startRealtimeForSelectedMonth());
 
+/* ========= MODAL ========= */
 function abrirModal() { overlay.classList.remove("hidden"); }
-
 function fecharModal() {
   overlay.classList.add("hidden");
   diaAtualKey = null;
   listaEventos.innerHTML = "";
+  if (unsubDay) { unsubDay(); unsubDay = null; }
 }
 
 function criarCardEvento(evento = {}, indice = 1) {
@@ -182,11 +344,13 @@ function criarCardEvento(evento = {}, indice = 1) {
     </div>
   `;
 
+  // preencher valores
   for (const [k, v] of Object.entries(evento)) {
     const el = card.querySelector(`[name="${k}"]`);
     if (el) el.value = v ?? "";
   }
 
+  // remover
   card.querySelector(".btnRemover").addEventListener("click", () => {
     card.remove();
     renumerarEventos();
@@ -196,49 +360,59 @@ function criarCardEvento(evento = {}, indice = 1) {
 }
 
 function renumerarEventos() {
-  const cards = [...listaEventos.querySelectorAll(".evento-card")];
-
-  cards.forEach((c, i) => {
-    const titulo = c.querySelector(".evento-titulo");
-    if (titulo) titulo.textContent = `Evento #${i + 1}`;
-    c.style.order = i;
+  [...listaEventos.querySelectorAll(".evento-card")].forEach((c, i) => {
+    const t = c.querySelector(".evento-titulo");
+    if (t) t.textContent = `Evento #${i + 1}`;
   });
 }
 
+function renderEventosNoModal(eventos, diaKey) {
+  listaEventos.innerHTML = "";
+
+  if (eventos.length === 0) {
+    listaEventos.appendChild(criarCardEvento({ estado: "nenhum", dataEvento: diaKey }, 1));
+  } else {
+    eventos.forEach((ev, idx) => {
+      const copy = { ...ev };
+      if (!copy.dataEvento) copy.dataEvento = diaKey;
+      listaEventos.appendChild(criarCardEvento(copy, idx + 1));
+    });
+  }
+  renumerarEventos();
+}
+
 function abrirDia(dia, mes, ano) {
+  if (!allowed) return;
+
   diaAtualKey = keyDia(ano, mes, dia);
   modalData.textContent = `Dia ${dia} de ${meses[mes]} de ${ano} (${diaAtualKey})`;
 
-  listaEventos.innerHTML = "";
+  if (unsubDay) { unsubDay(); unsubDay = null; }
 
-  const dados = lerDia(diaAtualKey);
-  const eventos = Array.isArray(dados.eventos) ? dados.eventos : [];
+  const ref = doc(db, "dias", diaAtualKey);
+  unsubDay = onSnapshot(ref, (snap) => {
+    const dados = snap.exists() ? snap.data() : { eventos: [] };
+    const eventos = Array.isArray(dados.eventos) ? dados.eventos : [];
 
-  if (eventos.length === 0) {
-    listaEventos.appendChild(
-      criarCardEvento({ estado: "nenhum", dataEvento: diaAtualKey }, 1)
-    );
-  } else {
-    eventos.forEach((ev, idx) => {
-      if (!ev.dataEvento) ev.dataEvento = diaAtualKey;
-      listaEventos.appendChild(criarCardEvento(ev, idx + 1));
-    });
-  }
+    // manter cache do mês coerente
+    monthData.set(diaAtualKey, { eventos });
+
+    renderEventosNoModal(eventos, diaAtualKey);
+    criarCalendario();
+  });
 
   abrirModal();
 }
 
 /* + Adicionar evento */
-btnAdicionarEvento?.addEventListener("click", () => {
+btnAdicionarEvento.addEventListener("click", () => {
   const count = listaEventos.querySelectorAll(".evento-card").length;
-  listaEventos.appendChild(
-    criarCardEvento({ estado: "nenhum", dataEvento: diaAtualKey }, count + 1)
-  );
+  listaEventos.appendChild(criarCardEvento({ estado: "nenhum", dataEvento: diaAtualKey }, count + 1));
   renumerarEventos();
 });
 
-/* Guardar todos os eventos do dia */
-btnGuardarDia?.addEventListener("click", () => {
+/* Guardar (todos os eventos do dia) */
+btnGuardarDia.addEventListener("click", async () => {
   if (!diaAtualKey) return;
 
   const cards = [...listaEventos.querySelectorAll(".evento-card")];
@@ -246,7 +420,7 @@ btnGuardarDia?.addEventListener("click", () => {
   const eventos = cards
     .map(card => {
       const obj = {};
-      card.querySelectorAll("[name]").forEach(el => (obj[el.name] = el.value));
+      card.querySelectorAll("[name]").forEach(el => obj[el.name] = el.value);
       return obj;
     })
     .filter(ev =>
@@ -254,32 +428,41 @@ btnGuardarDia?.addEventListener("click", () => {
       (ev.clienteEmpresa && ev.clienteEmpresa.trim() !== "")
     );
 
-  if (eventos.length === 0) apagarDia(diaAtualKey);
-  else gravarDia(diaAtualKey, { eventos });
-
-  fecharModal();
-  criarCalendario();
+  try {
+    if (eventos.length === 0) {
+      await deleteDoc(doc(db, "dias", diaAtualKey));
+      monthData.delete(diaAtualKey);
+    } else {
+      await setDoc(doc(db, "dias", diaAtualKey), { eventos }, { merge: true });
+      monthData.set(diaAtualKey, { eventos });
+    }
+    fecharModal();
+    criarCalendario();
+  } catch (e) {
+    console.error(e);
+    alert("Erro a guardar no Firestore.");
+  }
 });
 
-/* Apagar todos os eventos do dia */
-btnApagarDia?.addEventListener("click", () => {
+/* Apagar todos do dia */
+btnApagarDia.addEventListener("click", async () => {
   if (!diaAtualKey) return;
-  apagarDia(diaAtualKey);
-  fecharModal();
-  criarCalendario();
+
+  try {
+    await deleteDoc(doc(db, "dias", diaAtualKey));
+    monthData.delete(diaAtualKey);
+    fecharModal();
+    criarCalendario();
+  } catch (e) {
+    console.error(e);
+    alert("Erro a apagar no Firestore.");
+  }
 });
 
-/* Fechar modal */
-btnFechar?.addEventListener("click", fecharModal);
-btnCancelar?.addEventListener("click", fecharModal);
-
-overlay?.addEventListener("click", (e) => {
-  if (e.target === overlay) fecharModal();
-});
-
-/* Atualizar calendário */
-selectAno.addEventListener("change", criarCalendario);
-selectMes.addEventListener("change", criarCalendario);
+/* Fechar */
+btnFechar.addEventListener("click", fecharModal);
+btnCancelar.addEventListener("click", fecharModal);
+overlay.addEventListener("click", (e) => { if (e.target === overlay) fecharModal(); });
 
 /* Iniciar */
 selectAno.value = "2026";
