@@ -1,0 +1,213 @@
+* { box-sizing: border-box; }
+
+body {
+  font-family: Arial, sans-serif;
+  text-align: center;
+  margin: 0;
+  padding: 20px;
+  background: #f5f5f5;
+}
+
+h1 { margin: 0 0 12px; }
+
+.controles { margin-bottom: 15px; }
+select { padding: 6px 10px; margin: 5px; }
+
+/* Cabeçalho */
+.cabecalho {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  max-width: 760px;
+  margin: 0 auto;
+  gap: 6px;
+}
+
+.cabecalho div {
+  background: #42566e;
+  color: white;
+  padding: 10px;
+  font-weight: bold;
+  border-radius: 8px;
+}
+
+/* Calendário */
+.calendario {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  max-width: 760px;
+  margin: 10px auto;
+  gap: 6px;
+}
+
+.dia {
+  border: 1px solid #ccc;
+  height: 78px;
+  background: white;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px 10px;
+  font-weight: bold;
+  border-radius: 12px;
+}
+
+.dia:hover { background: #e9f2ff; }
+
+.vazio {
+  visibility: hidden;
+  cursor: default;
+}
+
+/* CORES por estado */
+.dia.confirmado {
+  background: #ffe5e5;
+  border-color: #ff4d4d;
+}
+
+.dia.provisorio {
+  background: #fff1dd;
+  border-color: #ffa94d;
+}
+
+/* pequeno marcador */
+.badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #42566e;
+  color: #fff;
+  align-self: flex-start;
+}
+
+/* Modal */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 1000;
+}
+
+.hidden { display: none; }
+
+.modal {
+  width: min(980px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px;
+  text-align: left;
+}
+
+.modal-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.modal h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.sub {
+  color: #666;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+/* Form em grelha */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #333;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+input, textarea, select {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  outline: none;
+  background: #fff;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: #42566e;
+}
+
+.span2 { grid-column: span 4; }
+
+.botoes {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 6px;
+}
+
+.direita { display: flex; gap: 10px; }
+
+.btn {
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: #42566e;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-sec {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid #ccc;
+  background: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Cores sequenciais para diferenciar eventos no mesmo dia */
+.evento-card:nth-child(1) {
+  background: #ffffff; /* branco padrão */
+}
+
+.evento-card:nth-child(2) {
+  background: #f2f5ff; /* azul muito claro */
+}
+
+.evento-card:nth-child(3) {
+  background: #fff2f2; /* vermelho muito claro */
+}
+
+.evento-card:nth-child(4) {
+  background: #f2fff5; /* verde muito claro */
+}
+
+.evento-card:nth-child(5) {
+  background: #fff7e6; /* amarelo muito claro */
+}
+
+/* Mantém a borda igual para todos */
+.evento-card {
+  border: 1px solid #e3e3e3;
+}

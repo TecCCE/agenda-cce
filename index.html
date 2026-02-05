@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agenda CCE</title>
+  <link rel="stylesheet" href="estilo.css" />
+  <style>
+    /* Cabeçalho com logo centrado */
+    .topo {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .logo {
+      height: 60px; /* ajusta depois se quiseres maior/menor */
+      width: auto;
+    }
+
+    /* Tom de cinzento igual para o cabeçalho dos dias */
+    .cabecalho div {
+      background: #5f6f81; /* mesmo tom de cinzento harmonizado */
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- LOGO CENTRADO (SEM TEXTO) -->
+  <div class="topo">
+    <img src="logo.png" alt="Logo CCE" class="logo" />
+  </div>
+
+  <!-- Controles -->
+  <div class="controles">
+    <select id="ano" aria-label="Ano"></select>
+    <select id="mes" aria-label="Mês"></select>
+  </div>
+
+  <!-- Cabeçalho dos dias da semana -->
+  <div class="cabecalho">
+    <div>DOM</div>
+    <div>SEG</div>
+    <div>TER</div>
+    <div>QUA</div>
+    <div>QUI</div>
+    <div>SEX</div>
+    <div>SAB</div>
+  </div>
+
+  <!-- Calendário -->
+  <div id="calendario" class="calendario"></div>
+
+  <!-- MODAL -->
+  <div id="overlay" class="overlay hidden">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitulo">
+
+      <div class="modal-topo">
+        <div>
+          <h2 id="modalTitulo">Registos do Dia</h2>
+          <div class="sub" id="modalData">—</div>
+        </div>
+        <button id="btnFechar" class="btn-sec" type="button">Fechar</button>
+      </div>
+
+      <div class="toolbar">
+        <button id="btnAdicionarEvento" class="btn" type="button">+ Adicionar evento</button>
+      </div>
+
+      <!-- Lista de eventos (preenchida pelo JS) -->
+      <div id="listaEventos" class="lista-eventos"></div>
+
+      <div class="botoes-finais">
+        <button id="btnApagarDia" class="btn-sec" type="button">Apagar todos deste dia</button>
+
+        <div class="direita">
+          <button id="btnCancelar" class="btn-sec" type="button">Cancelar</button>
+          <button id="btnGuardarDia" class="btn" type="button">Guardar</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
