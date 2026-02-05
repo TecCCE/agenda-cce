@@ -2,35 +2,33 @@
 <html lang="pt">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Agenda CCE</title>
   <link rel="stylesheet" href="estilo.css" />
-  <style>
-    /* Cabeçalho com logo centrado */
-    .topo {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-
-    .logo {
-      height: 60px; /* ajusta depois se quiseres maior/menor */
-      width: auto;
-    }
-
-    /* Tom de cinzento igual para o cabeçalho dos dias */
-    .cabecalho div {
-      background: #5f6f81; /* mesmo tom de cinzento harmonizado */
-    }
-  </style>
 </head>
 
 <body>
 
-  <!-- LOGO CENTRADO (SEM TEXTO) -->
-  <div class="topo">
-    <img src="logo.png" alt="Logo CCE" class="logo" />
+  <!-- Logo centrado (usa o teu logo.png) -->
+  <div style="display:flex;justify-content:center;align-items:center;margin-top:20px;margin-bottom:10px;">
+    <img src="logo.png" alt="Logo CCE" style="max-height:70px; width:auto;" />
+  </div>
+
+  <!-- Barra de autenticação (email/password) -->
+  <div style="max-width:900px;margin:0 auto 10px;display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;">
+    <input id="email" type="email" placeholder="Email"
+           style="padding:10px 12px;border:1px solid #ccc;border-radius:10px;min-width:240px;">
+    <input id="password" type="password" placeholder="Palavra-passe"
+           style="padding:10px 12px;border:1px solid #ccc;border-radius:10px;min-width:200px;">
+    <button id="btnLogin" type="button"
+            style="padding:10px 14px;border-radius:10px;border:0;background:#3f556e;color:#fff;font-weight:700;cursor:pointer;">
+      Entrar
+    </button>
+    <button id="btnLogout" type="button" class="hidden"
+            style="padding:10px 14px;border-radius:10px;border:1px solid #bbb;background:#fff;color:#222;font-weight:700;cursor:pointer;">
+      Sair
+    </button>
+    <span id="authStatus" style="font-weight:700;color:#333;">Não autenticado</span>
   </div>
 
   <!-- Controles -->
@@ -39,21 +37,15 @@
     <select id="mes" aria-label="Mês"></select>
   </div>
 
-  <!-- Cabeçalho dos dias da semana -->
+  <!-- Cabeçalho dias semana -->
   <div class="cabecalho">
-    <div>DOM</div>
-    <div>SEG</div>
-    <div>TER</div>
-    <div>QUA</div>
-    <div>QUI</div>
-    <div>SEX</div>
-    <div>SAB</div>
+    <div>DOM</div><div>SEG</div><div>TER</div><div>QUA</div><div>QUI</div><div>SEX</div><div>SAB</div>
   </div>
 
   <!-- Calendário -->
   <div id="calendario" class="calendario"></div>
 
-  <!-- MODAL -->
+  <!-- Overlay / Modal -->
   <div id="overlay" class="overlay hidden">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitulo">
 
@@ -69,12 +61,10 @@
         <button id="btnAdicionarEvento" class="btn" type="button">+ Adicionar evento</button>
       </div>
 
-      <!-- Lista de eventos (preenchida pelo JS) -->
       <div id="listaEventos" class="lista-eventos"></div>
 
       <div class="botoes-finais">
         <button id="btnApagarDia" class="btn-sec" type="button">Apagar todos deste dia</button>
-
         <div class="direita">
           <button id="btnCancelar" class="btn-sec" type="button">Cancelar</button>
           <button id="btnGuardarDia" class="btn" type="button">Guardar</button>
@@ -84,6 +74,7 @@
     </div>
   </div>
 
-  <script src="script.js"></script>
+  <!-- IMPORTANTE -->
+  <script type="module" src="script.js"></script>
 </body>
 </html>
