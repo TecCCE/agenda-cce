@@ -476,7 +476,10 @@ btnAdicionarEvento?.addEventListener("click", () => {
 });
 
 btnGuardarDia?.addEventListener("click", async () => {
-  if (!canEdit() || !state.diaAtualKey) return;
+  if (!canEdit() || !state.diaAtualKey) {
+    alert("Sem permissão ou dia inválido.");
+    return;
+  }
 
   const cards = [...listaEventos.querySelectorAll(".evento-card")];
 
@@ -494,17 +497,17 @@ btnGuardarDia?.addEventListener("click", async () => {
   try {
     if (eventos.length === 0) {
       await deleteDoc(doc(db, "dias", state.diaAtualKey));
-      state.monthData.delete(state.diaAtualKey);
+      alert("Dia apagado (sem eventos).");
     } else {
       await setDoc(doc(db, "dias", state.diaAtualKey), { eventos }, { merge: true });
-      state.monthData.set(state.diaAtualKey, { eventos });
+      alert("Guardado com sucesso ✅");
     }
 
     fecharModal();
     criarCalendario();
   } catch (e) {
-    console.error(e);
-    alert("Erro a guardar no Firestore.");
+    console.error("ERRO AO GUARDAR:", e);
+    alert("Erro ao guardar no Firestore. Abre F12 → Console para ver o erro.");
   }
 });
 
@@ -529,4 +532,5 @@ selectMes.addEventListener("change", () => canEdit() && startRealtimeForSelected
 /* ===== UI inicial ===== */
 setUIEnabled(false);
 renderMensagem("Faz login para ver e editar a agenda.");
+
 
