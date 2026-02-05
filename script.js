@@ -20,7 +20,7 @@ import {
   FieldPath
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
-/* ========= Firebase Config (o teu) ========= */
+/* ========= Firebase Config ========= */
 const firebaseConfig = {
   apiKey: "AIzaSyCs9f8SeZQ-H2aSYm695q2RW1gGPtEUoJA",
   authDomain: "agenda-cce.firebaseapp.com",
@@ -76,31 +76,55 @@ function startEndKeys(ano, mes) {
 }
 
 function estadoAgregado(eventos) {
-  // prioridade: confirmado > provisorio > segunda_opcao > nenhum
   if (eventos.some(e => e.estado === "confirmado")) return "confirmado";
   if (eventos.some(e => e.estado === "provisorio")) return "provisorio";
   if (eventos.some(e => e.estado === "segunda_opcao")) return "segunda_opcao";
   return "nenhum";
 }
 
-// Mostra TODOS os nomes dos eventos no badge
 function textoBadge(eventos) {
-  const nomes = eventos
-    .map(e => (e.evento || "").trim())
-    .filter(Boolean);
+  const nomes = eventos.map(e => (e.evento || "").trim()).filter(Boolean);
   if (nomes.length === 0) return "";
   return nomes.join(", ");
 }
 
-/* ========= Estado global ========= */
+/* ========= Estado ========= */
 let user = null;
 let allowed = false;
 
-let monthData = new Map();     // docId -> { eventos: [] }
+let monthData = new Map();
 let unsubMonth = null;
 
 let diaAtualKey = null;
 let unsubDay = null;
+
+/* ========= Helpers UI bloqueio ========= */
+function setUIEnabled(enabled) {
+  // bloquear botões do modal
+  btnAdicionarEvento.disabled = !enabled;
+  btnGuardarDia.disabled = !enabled;
+  btnApagarDia.disabled = !enabled;
+
+  // opcional: dar feedback visual (se tiveres CSS)
+  btnAdicionarEvento.style.opacity = enabled ? "1" : "0.5";
+  btnGuardarDia.style.opacity = enabled ? "1" : "0.5";
+  btnApagarDia.style.opacity = enabled ? "1" : "0.5";
+}
+
+function renderMensagem(texto) {
+  calendario.innerHTML = "";
+  const msg = document.createElement("div");
+  msg.style.gridColumn = "1 / -1";
+  msg.style.padding = "12px";
+  msg.style.color = "#333";
+  msg.style.fontWeight = "700";
+  msg.textContent = texto;
+  calendario.appendChild(msg);
+}
+
+function canEdit() {
+  return !!user && allowed;
+}
 
 /* ========= AUTH ========= */
 btnLogin.addEventListener("click", async () => {
@@ -133,8 +157,11 @@ onAuthStateChanged(auth, async (u) => {
     authStatus.textContent = "Não autenticado";
     btnLogout.classList.add("hidden");
     btnLogin.classList.remove("hidden");
+
     stopRealtime();
-    renderMensagem("Faz login para ver a agenda.");
+    fecharModal();
+    setUIEnabled(false);
+    renderMensagem("Faz login para ver e editar a agenda.");
     return;
   }
 
@@ -146,15 +173,17 @@ onAuthStateChanged(auth, async (u) => {
 
   if (!allowed) {
     stopRealtime();
+    fecharModal();
+    setUIEnabled(false);
     renderMensagem("Sem permissão. O teu email não está autorizado.");
     alert("Sem permissão: o teu email não está na allowlist.");
     return;
   }
 
+  setUIEnabled(true);
   startRealtimeForSelectedMonth();
 });
 
-/* allowlist: documento allowlist/{email} */
 async function checkAllowlist(email) {
   try {
     const ref = doc(db, "allowlist", normalizeEmail(email));
@@ -174,7 +203,7 @@ function stopRealtime() {
 }
 
 function startRealtimeForSelectedMonth() {
-  if (!allowed) return;
+  if (!canEdit()) return;
 
   if (unsubMonth) { unsubMonth(); unsubMonth = null; }
   monthData = new Map();
@@ -201,18 +230,6 @@ function startRealtimeForSelectedMonth() {
   });
 }
 
-/* ========= UI: Mensagem ========= */
-function renderMensagem(texto) {
-  calendario.innerHTML = "";
-  const msg = document.createElement("div");
-  msg.style.gridColumn = "1 / -1";
-  msg.style.padding = "12px";
-  msg.style.color = "#333";
-  msg.style.fontWeight = "700";
-  msg.textContent = texto;
-  calendario.appendChild(msg);
-}
-
 /* ========= Preencher selects ========= */
 for (let ano = 2026; ano <= 2030; ano++) {
   const opt = document.createElement("option");
@@ -220,7 +237,6 @@ for (let ano = 2026; ano <= 2030; ano++) {
   opt.textContent = String(ano);
   selectAno.appendChild(opt);
 }
-
 meses.forEach((m, idx) => {
   const opt = document.createElement("option");
   opt.value = String(idx);
@@ -228,12 +244,12 @@ meses.forEach((m, idx) => {
   selectMes.appendChild(opt);
 });
 
-/* ========= Calendário ========= */
+/* ========= CALENDÁRIO ========= */
 function criarCalendario() {
   calendario.innerHTML = "";
 
-  if (!allowed) {
-    renderMensagem(user ? "Sem permissão." : "Faz login para ver a agenda.");
+  if (!canEdit()) {
+    renderMensagem(user ? "Sem permissão." : "Faz login para ver e editar a agenda.");
     return;
   }
 
@@ -264,7 +280,6 @@ function criarCalendario() {
     const agg = estadoAgregado(eventos);
     if (agg === "confirmado") div.classList.add("confirmado");
     if (agg === "provisorio") div.classList.add("provisorio");
-    // se quiseres uma cor para 2ª opção, depois adicionamos a classe no CSS
 
     const btxt = textoBadge(eventos);
     if (btxt) {
@@ -274,13 +289,14 @@ function criarCalendario() {
       div.appendChild(badge);
     }
 
+    // ✅ Agora só abre dia se autenticado+allowed (aqui já é)
     div.addEventListener("click", () => abrirDia(dia, mes, ano));
     calendario.appendChild(div);
   }
 }
 
-selectAno.addEventListener("change", () => allowed && startRealtimeForSelectedMonth());
-selectMes.addEventListener("change", () => allowed && startRealtimeForSelectedMonth());
+selectAno.addEventListener("change", () => canEdit() && startRealtimeForSelectedMonth());
+selectMes.addEventListener("change", () => canEdit() && startRealtimeForSelectedMonth());
 
 /* ========= MODAL ========= */
 function abrirModal() { overlay.classList.remove("hidden"); }
@@ -344,17 +360,22 @@ function criarCardEvento(evento = {}, indice = 1) {
     </div>
   `;
 
-  // preencher valores
   for (const [k, v] of Object.entries(evento)) {
     const el = card.querySelector(`[name="${k}"]`);
     if (el) el.value = v ?? "";
   }
 
-  // remover
-  card.querySelector(".btnRemover").addEventListener("click", () => {
+  const btnRem = card.querySelector(".btnRemover");
+  btnRem.addEventListener("click", () => {
+    if (!canEdit()) return;
     card.remove();
     renumerarEventos();
   });
+
+  // ✅ Se não pode editar, desativa inputs
+  if (!canEdit()) {
+    card.querySelectorAll("input, select, textarea, button").forEach(el => el.disabled = true);
+  }
 
   return card;
 }
@@ -382,7 +403,10 @@ function renderEventosNoModal(eventos, diaKey) {
 }
 
 function abrirDia(dia, mes, ano) {
-  if (!allowed) return;
+  if (!canEdit()) {
+    alert("Tens de fazer login para editar.");
+    return;
+  }
 
   diaAtualKey = keyDia(ano, mes, dia);
   modalData.textContent = `Dia ${dia} de ${meses[mes]} de ${ano} (${diaAtualKey})`;
@@ -393,10 +417,7 @@ function abrirDia(dia, mes, ano) {
   unsubDay = onSnapshot(ref, (snap) => {
     const dados = snap.exists() ? snap.data() : { eventos: [] };
     const eventos = Array.isArray(dados.eventos) ? dados.eventos : [];
-
-    // manter cache do mês coerente
     monthData.set(diaAtualKey, { eventos });
-
     renderEventosNoModal(eventos, diaAtualKey);
     criarCalendario();
   });
@@ -406,17 +427,17 @@ function abrirDia(dia, mes, ano) {
 
 /* + Adicionar evento */
 btnAdicionarEvento.addEventListener("click", () => {
+  if (!canEdit()) return;
   const count = listaEventos.querySelectorAll(".evento-card").length;
   listaEventos.appendChild(criarCardEvento({ estado: "nenhum", dataEvento: diaAtualKey }, count + 1));
   renumerarEventos();
 });
 
-/* Guardar (todos os eventos do dia) */
+/* Guardar */
 btnGuardarDia.addEventListener("click", async () => {
-  if (!diaAtualKey) return;
+  if (!canEdit() || !diaAtualKey) return;
 
   const cards = [...listaEventos.querySelectorAll(".evento-card")];
-
   const eventos = cards
     .map(card => {
       const obj = {};
@@ -444,9 +465,9 @@ btnGuardarDia.addEventListener("click", async () => {
   }
 });
 
-/* Apagar todos do dia */
+/* Apagar dia */
 btnApagarDia.addEventListener("click", async () => {
-  if (!diaAtualKey) return;
+  if (!canEdit() || !diaAtualKey) return;
 
   try {
     await deleteDoc(doc(db, "dias", diaAtualKey));
@@ -467,4 +488,5 @@ overlay.addEventListener("click", (e) => { if (e.target === overlay) fecharModal
 /* Iniciar */
 selectAno.value = "2026";
 selectMes.value = "0";
-criarCalendario();
+setUIEnabled(false);
+renderMensagem("Faz login para ver e editar a agenda.");
