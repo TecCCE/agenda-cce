@@ -184,13 +184,13 @@ onAuthStateChanged(auth, async (u) => {
   startRealtimeForSelectedMonth();
 });
 
-async function checkAllowlist(email) {
+async function checkAllowlistByUid(uid) {
   try {
-    const ref = doc(db, "allowlist", normalizeEmail(email));
+    const ref = doc(db, "allowlist", uid);
     const snap = await getDoc(ref);
     return snap.exists();
   } catch (e) {
-    console.error(e);
+    console.error("ALLOWLIST ERROR:", e);
     return false;
   }
 }
@@ -490,4 +490,5 @@ selectAno.value = "2026";
 selectMes.value = "0";
 setUIEnabled(false);
 renderMensagem("Faz login para ver e editar a agenda.");
+
 
