@@ -149,11 +149,9 @@ btnLogout.addEventListener("click", async () => {
   await signOut(auth);
 });
 
-onAuthStateChanged(auth, async (u) => {
-  user = u || null;
-
-  if (!user) {
-    allowed = false;
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    allowed = await checkAllowlistByUid(user.uid);
     authStatus.textContent = "Não autenticado";
     btnLogout.classList.add("hidden");
     btnLogin.classList.remove("hidden");
@@ -490,5 +488,6 @@ selectAno.value = "2026";
 selectMes.value = "0";
 setUIEnabled(false);
 renderMensagem("Faz login para ver e editar a agenda.");
+
 
 
