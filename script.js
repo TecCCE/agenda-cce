@@ -55,8 +55,8 @@ const btnApagarDia = document.getElementById("btnApagarDia");
 // (se tens inputs de login no index)
 const inputEmail = document.getElementById("email");
 const inputPass = document.getElementById("password");
-const btnEntrar = document.getElementById("btnEntrar");
-const btnSair = document.getElementById("btnSair");
+const btnEntrar = document.getElementById("btnLogin");
+const btnSair = document.getElementById("btnLogout");
 const authStatus = document.getElementById("authStatus");
 
 // =========================
@@ -611,4 +611,5 @@ selectMes.addEventListener("change", () => {
 selectAno.value = "2026";
 selectMes.value = "0";
 setUIAuth();
+
 
